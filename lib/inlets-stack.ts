@@ -70,7 +70,7 @@ export class InletsStack extends cdk.Stack {
       taskDefinition: exitServerDefinition,
       assignPublicIp: true,
       healthCheckGracePeriod: cdk.Duration.seconds(2147483647), // Effectively infinite grace period
-      desiredCount: 2 // You can scale out for a more HA deployment
+      desiredCount: 1 // You can scale out for a more HA deployment
     });
 
     // Allow traffic to the exit server from anywhere. This allows my Raspberry Pi's to connect
