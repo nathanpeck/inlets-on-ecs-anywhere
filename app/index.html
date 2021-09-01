@@ -6,20 +6,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>ECS Anywhere</title>
+  <style>
+    .bar {
+      position: relative;
+      height: 40px;
+      width: 100%;
+      background-color: gray;
+      margin-top: 20px;
+      line-height: 40px;
+      text-align: left;
+    }
+
+    .fill {
+      padding-left: 10px;
+      overflow: show;
+      white-space: nowrap;
+      display: block;
+      position: absolute;
+      top: 0px;
+      float: left;
+      min-width: 4px;
+    }
+  </style>
 </head>
 
 <body style="background-color:rgb(35, 47, 62);">
-  <div style='vertical-align: middle; margin:auto; width:50%; padding-top:200px; text-align: center;'>
+  <div style='vertical-align: middle; margin:auto; width:1024px; padding-top:20px; text-align: center;'>
     <div style='font-size: 20px; font-family: "Gill Sans", sans-serif; color: white;'>
-      You reached <%= hostname %><br />
-        <br />
-        Uptime: <%= uptime %>
-          <br />
-          CPU: <%= cpu %>
-            <br />
-            Network: <%= network %>
-              <br />
-              Metadata: <%= metadata %>
+      <p>
+      <h1>You have reached a Raspberry Pi on <a style='color: orange'
+          href='https://twitter.com/nathankpeck'>@nathankpeck</a>'s desk.</h1>
+      </p>
+      <br />
+      <img style='width: 1024px; height: 761px;' src='https://<%= bucket %>/<%= device %>.jpg' /><br />
+      <br />
+      <div class='bar'>
+        <div class='fill'>
+          Hostname: <%= hostname %>
+        </div>
+      </div>
+      <div class='bar'>
+        <div class='fill'>
+          Uptime: <%= uptime %>
+        </div>
+      </div>
+      <div class='bar'>
+        <div class='fill' style='width: <%= cpu %>%; background-color: orange'>
+          CPU: <%= cpu %>%
+        </div>
+      </div>
+      <div class='bar'>
+        <div class='fill' style='width: <%= memory %>%; background-color: green'>
+          Memory: <%= memory %>%
+        </div>
+      </div>
+      <div class='bar'>
+        <div class='fill' style='width: <%= disk %>%; background-color: blue'>
+          Disk: <%= disk %>%
+        </div>
+      </div>
+      <div class='bar'>
+        <div class='fill' style='width: <%= temp/85*100 %>%; background-color: red'>
+          Temperature: <%= temp %>C
+        </div>
+      </div>
     </div>
   </div>
 </body>

@@ -2,11 +2,17 @@ import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
 import * as ecs from '@aws-cdk/aws-ecs';
 import * as ecr from '@aws-cdk/aws-ecr';
+import * as s3 from '@aws-cdk/aws-s3';
+import * as s3Deployment from '@aws-cdk/aws-s3-deployment';
 import * as secretsManager from '@aws-cdk/aws-secretsmanager';
 import * as elbv2 from '@aws-cdk/aws-elasticloadbalancingv2';
+import * as acm from '@aws-cdk/aws-certificatemanager';
 
 import * as path from 'path';
 import { spawnSync } from 'child_process';
+
+const CERTIFICATE_ARN = 'arn:aws:acm:us-east-2:209640446841:certificate/d9ebdf90-9f37-4ca5-abfc-87d2efbc90c7';
+const DOMAIN_NAME = 'nathanpeck.gg';
 
 export class InletsStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -80,27 +86,55 @@ export class InletsStack extends cdk.Stack {
     service.connections.allowFromAnyIpv4(ec2.Port.tcp(8123));
     service.connections.allowFromAnyIpv4(ec2.Port.tcp(8000));
 
-    // Launch an NLB that will sit in front of the inlet exit server, for HA and to get
+    // Launch an ALB that will sit in front of the inlet exit server, for HA and to get
     // a stable hostname for sending traffic to.
-    const lb = new elbv2.NetworkLoadBalancer(this, 'inlets-lb', { vpc, internetFacing: true });
-    const inletsClientListener = lb.addListener('client-listener', { port: 8123 });
+    const lb = new elbv2.ApplicationLoadBalancer(this, 'inlets-lb', {
+      vpc,
+      internetFacing: true
+    });
+
+    var cert = acm.Certificate.fromCertificateArn(this, 'cert', CERTIFICATE_ARN);
+
+    // Secure listener for the clients to connect to the exit server
+    const inletsClientListener = lb.addListener('client-listener', {
+      port: 8123,
+      protocol: elbv2.ApplicationProtocol.HTTPS,
+      certificates: [cert],
+    });
 
     inletsClientListener.addTargets('inlets-private', {
       port: 8123,
+      protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [service.loadBalancerTarget({
         containerName: 'inlets',
         containerPort: 8123,
       })]
     });
 
-    const inletsPublicListener = lb.addListener('public-listener', { port: 80 });
+    // Secure listener for web browser to connect
+    const inletsSecurePublicListener = lb.addListener('public-listener', {
+      port: 443,
+      protocol: elbv2.ApplicationProtocol.HTTPS,
+      certificates: [cert],
+    });
 
-    inletsPublicListener.addTargets('inlets-public', {
-      port: 80,
+    inletsSecurePublicListener.addTargets('inlets-public', {
+      port: 443,
+      protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [service.loadBalancerTarget({
         containerName: 'inlets',
         containerPort: 8000,
       })]
+    });
+
+    // Redirect inbound port 80 traffic to 443
+    const inletsPublicListener = lb.addListener('redirect-listener', {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      defaultAction: elbv2.ListenerAction.redirect({
+        protocol: 'HTTPS',
+        port: '443'
+      }),
     });
 
     // Create an ECS Anywhere service to run the Inlets clients in my Raspberry
@@ -113,7 +147,8 @@ export class InletsStack extends cdk.Stack {
       image: ecs.ContainerImage.fromRegistry('ghcr.io/inlets/inlets-pro:0.9.0-rc2'),
       logging: new ecs.AwsLogDriver({ streamPrefix: 'inlets-client' }),
       command: [
-        "http", "client", "--url=ws://" + lb.loadBalancerDnsName + ":8123", "--token-env=INLETS_TOKEN", "--upstream", "localhost:80",
+        "http", "client", `--url=wss://${DOMAIN_NAME}:8123`, "--token-env=INLETS_TOKEN", "--upstream", "localhost:80",
+        "--auto-tls=false", // We don't need the automatic self signed TLS, as the ALB has a cert
         "--license-env=LICENSE_KEY"
       ],
       secrets: {
@@ -150,6 +185,20 @@ export class InletsStack extends cdk.Stack {
     cfnDaemon.schedulingStrategy = 'DAEMON';
     cfnDaemon.desiredCount = undefined;
     //--------------------------------------------------------------------------------------------------
+
+    // Upload the static image files that the on-prem hosted application will reference
+    // in it's HTML page.
+    var bucket = new s3.Bucket(this, 'static', {
+      publicReadAccess: true
+    });
+
+    new s3Deployment.BucketDeployment(this, 'deploy-images', {
+      sources: [s3Deployment.Source.asset('./static')],
+      destinationBucket: bucket,
+      metadata: {
+        'Cache-Control': 'max-age=3600'
+      }
+    });
 
     // Now define the external service that we will expose via Inlets
     // This service will run on the Raspberry Pi's in my home cluster.
@@ -202,19 +251,42 @@ export class InletsStack extends cdk.Stack {
       image: image,
       logging: new ecs.AwsLogDriver({ streamPrefix: 'app' }),
       command: ['node', 'index.js'],
+      environment: {
+        STATIC_URL: bucket.bucketDomainName
+      },
       portMappings: [
         {
           hostPort: 80,
           containerPort: 3000
         }
-      ]
+      ],
     });
+
+    appContainer.addMountPoints({
+      containerPath: '/stats',
+      readOnly: true,
+      sourceVolume: 'thermal'
+    })
 
     appContainer.addUlimits({
       softLimit: 1024000,
       hardLimit: 1024000,
       name: ecs.UlimitName.NOFILE
     });
+
+    //-PATCH-------------------------------------------------------------------------------------------
+    // Manually mount the system stats for thermal into the container
+    // as a volume.
+    var cfnDefinition = appDefinition.node.defaultChild as ecs.CfnTaskDefinition;
+    cfnDefinition.volumes = [
+      {
+        name: 'thermal',
+        host: {
+          sourcePath: '/sys/class/thermal/thermal_zone0'
+        }
+      }
+    ]
+    //------------------------------------------------------------------------------------------------
 
     new ecs.ExternalService(this, 'demo-app-service', {
       cluster,
