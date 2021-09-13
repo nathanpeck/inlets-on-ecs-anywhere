@@ -1,8 +1,8 @@
-# Welcome to your CDK TypeScript project!
+# Inlets on ECS Anywhere
 
-This is a blank project for TypeScript development with CDK.
+This is a sample AWS Cloud Development Kit architecture for deploying Inlets on ECS Anywhere.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+![](/images/diagram.png)
 
 ## Useful commands
 
