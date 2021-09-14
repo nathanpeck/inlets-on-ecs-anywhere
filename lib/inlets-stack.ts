@@ -112,7 +112,7 @@ export class InletsStack extends cdk.Stack {
       // Ensure that the Inlets clients are distributed
       // to Inlets servers evenly. You should still ensure
       // that there are more clients than servers so that every
-      // server has at least onne, ideally more clients to
+      // server has at least one, ideally more clients to
       // communicate with.
       loadBalancingAlgorithmType: elbv2.TargetGroupLoadBalancingAlgorithmType.LEAST_OUTSTANDING_REQUESTS,
       // The LB is not able to authenticate with the Inlets
