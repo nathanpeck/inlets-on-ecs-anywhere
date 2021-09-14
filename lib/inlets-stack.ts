@@ -76,7 +76,7 @@ export class InletsStack extends cdk.Stack {
       taskDefinition: exitServerDefinition,
       assignPublicIp: true,
       healthCheckGracePeriod: cdk.Duration.seconds(2147483647), // Effectively infinite grace period
-      desiredCount: 1 // You can scale out for a more HA deployment
+      desiredCount: 2 // You can scale out for a more HA deployment
     });
 
     // Allow traffic to the exit server from anywhere. This allows my Raspberry Pi's to connect
@@ -108,7 +108,19 @@ export class InletsStack extends cdk.Stack {
       targets: [service.loadBalancerTarget({
         containerName: 'inlets',
         containerPort: 8123,
-      })]
+      })],
+      // Ensure that the Inlets clients are distributed
+      // to Inlets servers evenly. You should still ensure
+      // that there are more clients than servers so that every
+      // server has at least onne, ideally more clients to
+      // communicate with.
+      loadBalancingAlgorithmType: elbv2.TargetGroupLoadBalancingAlgorithmType.LEAST_OUTSTANDING_REQUESTS,
+      // The LB is not able to authenticate with the Inlets
+      // Server so adjust it's expectations of what a healthy
+      // target looks like.
+      healthCheck: {
+        healthyHttpCodes: '404'
+      }
     });
 
     // Secure listener for web browser to connect
@@ -133,7 +145,7 @@ export class InletsStack extends cdk.Stack {
       protocol: elbv2.ApplicationProtocol.HTTP,
       defaultAction: elbv2.ListenerAction.redirect({
         protocol: 'HTTPS',
-        port: '443'
+        port: '443',
       }),
     });
 
